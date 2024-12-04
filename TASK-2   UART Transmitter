@@ -1,19 +1,18 @@
-module UART_Rx (
-    input wire reset_n,          // Active-low reset
-    input wire clock,            // System clock
-    input wire data_tx,          // Serial input data
-    input wire [1:0] parity_type,// Parity type: 00 (None), 01 (Odd), 10 (Even)
-    input wire [1:0] baud_rate,  // Baud rate selection
-    output wire [7:0] data_out,  // Parallel data output
-    output wire active_flag,     // Indicates active reception
-    output wire done_flag,       // Data reception complete
-    output wire [2:0] error_flag // Error flag: [Parity, Start, Stop]
+module UART_Tx (
+    input wire reset_n,           // Active-low reset
+    input wire clock,             // System clock
+    input wire send,              // Start transmission signal
+    input wire [7:0] data_in,     // Parallel data input
+    input wire [1:0] parity_type, // Parity type: 00 (None), 01 (Odd), 10 (Even)
+    input wire [1:0] baud_rate,   // Baud rate selection
+    output wire data_tx,          // Serial output data
+    output wire active_flag,      // Indicates ongoing transmission
+    output wire done_flag         // Indicates end of transmission
 );
 
-    wire baud_clk;               // Baud clock
-    wire [7:0] data_parl;        // Parallel data from SIPO
-    wire received_flag;          // Data received flag
-    wire start_bit, stop_bit, parity_bit; // DeFrame signals
+    wire baud_clk;                // Baud clock
+    wire parity_bit;              // Computed parity bit
+    wire [9:0] frame;             // Data frame with start, data, parity, and stop bits
 
     // Instantiate Baud Generator
     BaudGen baud_gen (
@@ -23,39 +22,25 @@ module UART_Rx (
         .baud_clk(baud_clk)
     );
 
-    // Instantiate SIPO (Serial-In Parallel-Out)
-    SIPO sipo (
-        .clk(baud_clk),
-        .reset_n(reset_n),
-        .data_tx(data_tx),
-        .data_parl(data_parl),
-        .received_flag(received_flag)
-    );
-
-    // Instantiate DeFrame
-    DeFrame deframe (
-        .clk(baud_clk),
-        .reset_n(reset_n),
-        .data_parl(data_parl),
-        .received_flag(received_flag),
-        .start_bit(start_bit),
-        .stop_bit(stop_bit),
+    // Instantiate Parity Generator
+    Parity parity_gen (
+        .data_in(data_in),
+        .parity_type(parity_type),
         .parity_bit(parity_bit)
     );
 
-    // Instantiate Error Checker
-    ErrorCheck error_check (
-        .start_bit(start_bit),
-        .stop_bit(stop_bit),
-        .parity_bit(parity_bit),
-        .data_parl(data_parl),
-        .parity_type(parity_type),
-        .error_flag(error_flag)
-    );
+    // Frame Construction
+    assign frame = {1'b1, data_in, parity_bit, 1'b0}; // Stop bit, data, parity, start bit
 
-    // Outputs
-    assign data_out = data_parl;
-    assign active_flag = received_flag;
-    assign done_flag = received_flag && !error_flag;
+    // Instantiate PISO (Parallel-In Serial-Out)
+    PISO piso (
+        .clk(baud_clk),
+        .reset_n(reset_n),
+        .send(send),
+        .data_in(frame),
+        .data_tx(data_tx),
+        .active_flag(active_flag),
+        .done_flag(done_flag)
+    );
 
 endmodule
